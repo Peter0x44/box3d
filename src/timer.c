@@ -195,6 +195,9 @@ static void b3SetCurrentThreadName( const char* name )
 static DWORD WINAPI b3ThreadStart( LPVOID param )
 {
 	b3Thread* t = (b3Thread*)param;
+#ifdef X87_CW
+	{ unsigned short cw = X87_CW; __asm__ volatile( "fldcw %0" : : "m"( cw ) ); }
+#endif
 	b3SetCurrentThreadName( t->name );
 	t->function( t->context );
 	return 0;
@@ -353,6 +356,9 @@ static void b3SetCurrentThreadName( const char* name )
 static void* b3ThreadStart( void* param )
 {
 	b3Thread* t = (b3Thread*)param;
+#ifdef X87_CW
+	{ unsigned short cw = X87_CW; __asm__ volatile( "fldcw %0" : : "m"( cw ) ); }
+#endif
 	b3SetCurrentThreadName( t->name );
 	t->function( t->context );
 	return NULL;
@@ -531,6 +537,9 @@ static void b3SetCurrentThreadName( const char* name )
 static void* b3ThreadStart( void* param )
 {
 	b3Thread* t = (b3Thread*)param;
+#ifdef X87_CW
+	{ unsigned short cw = X87_CW; __asm__ volatile( "fldcw %0" : : "m"( cw ) ); }
+#endif
 	b3SetCurrentThreadName( t->name );
 	t->function( t->context );
 	return NULL;

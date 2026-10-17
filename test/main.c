@@ -69,6 +69,9 @@ extern int WorldTest( void );
 
 int main( int argc, char** argv )
 {
+#ifdef X87_CW
+	{ unsigned short cw = X87_CW; __asm__ volatile( "fldcw %0" : : "m"( cw ) ); }
+#endif
 #if defined( _WIN32 )
 	// Enable memory-leak reports
 	//_CrtSetBreakAlloc(196);
