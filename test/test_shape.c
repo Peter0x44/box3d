@@ -693,10 +693,43 @@ static int RayCastOverlapConventionTest( void )
 	return 0;
 }
 
+// The double precision references below only mean something if double math really runs at
+// double precision. On an x87 build whose precision control is set lower (for example
+// -mpc32 or X87_CW=0x007F for determinism experiments), double results get rounded to 24
+// bits too, and the reference becomes far less accurate than the float code it measures.
+// So on x87 builds, run the references with 53-bit precision and restore the caller's
+// control word afterwards. The switch happens in the wrappers and the arithmetic in separate
+// functions that the compiler can neither inline nor analyse, so it can't move any double
+// operation across the fldcw.
+#if defined( __GNUC__ ) && defined( __i386__ ) && !defined( __SSE2_MATH__ )
+#define X87_REFERENCE_PRECISION 1
+#if defined( __clang__ )
+#define REFERENCE_NOINLINE __attribute__( ( noinline ) )
+#else
+#define REFERENCE_NOINLINE __attribute__( ( noinline, noipa ) )
+#endif
+
+static unsigned short X87SetDoublePrecision( void )
+{
+	unsigned short old, cw;
+	__asm__ volatile( "fnstcw %0" : "=m"( old ) : : "memory" );
+	cw = (unsigned short)( ( old & ~0x0300 ) | 0x0200 );
+	__asm__ volatile( "fldcw %0" : : "m"( cw ) : "memory" );
+	return old;
+}
+
+static void X87RestoreControlWord( unsigned short cw )
+{
+	__asm__ volatile( "fldcw %0" : : "m"( cw ) : "memory" );
+}
+#else
+#define REFERENCE_NOINLINE
+#endif
+
 // Distance, in double precision, from a single precision hit point to the analytic first
 // ray/sphere intersection of the same float ray. Isolates the single precision method error:
 // the reference carries no float rounding, so what remains is purely what the method lost.
-static double SphereHitError( b3Sphere shape, b3RayCastInput input, b3Vec3 point )
+REFERENCE_NOINLINE static double SphereHitErrorRef( b3Sphere shape, b3RayCastInput input, b3Vec3 point )
 {
 	double r = shape.radius;
 	double sx = (double)input.origin.x - shape.center.x;
@@ -715,7 +748,7 @@ static double SphereHitError( b3Sphere shape, b3RayCastInput input, b3Vec3 point
 }
 
 // Same idea for the ray/infinite-cylinder intersection, used where the hit lands on the side.
-static double CapsuleHitError( b3Capsule shape, b3RayCastInput input, b3Vec3 point )
+REFERENCE_NOINLINE static double CapsuleHitErrorRef( b3Capsule shape, b3RayCastInput input, b3Vec3 point )
 {
 	double ax = (double)shape.center2.x - shape.center1.x;
 	double ay = (double)shape.center2.y - shape.center1.y;
@@ -743,6 +776,30 @@ static double CapsuleHitError( b3Capsule shape, b3RayCastInput input, b3Vec3 poi
 	double ey = point.y - ( input.origin.y + tau * dy );
 	double ez = point.z - ( input.origin.z + tau * dz );
 	return sqrt( ex * ex + ey * ey + ez * ez );
+}
+
+static double SphereHitError( b3Sphere shape, b3RayCastInput input, b3Vec3 point )
+{
+#ifdef X87_REFERENCE_PRECISION
+	unsigned short old = X87SetDoublePrecision();
+	double error = SphereHitErrorRef( shape, input, point );
+	X87RestoreControlWord( old );
+	return error;
+#else
+	return SphereHitErrorRef( shape, input, point );
+#endif
+}
+
+static double CapsuleHitError( b3Capsule shape, b3RayCastInput input, b3Vec3 point )
+{
+#ifdef X87_REFERENCE_PRECISION
+	unsigned short old = X87SetDoublePrecision();
+	double error = CapsuleHitErrorRef( shape, input, point );
+	X87RestoreControlWord( old );
+	return error;
+#else
+	return CapsuleHitErrorRef( shape, input, point );
+#endif
 }
 
 // A miss is the worst possible outcome, so fold it into the error as a large sentinel.
